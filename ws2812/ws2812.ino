@@ -6,6 +6,9 @@
 #define BUTTON_PIN 0
 #define BRIGHTNESS_PIN 4
 
+#define DEBUG true
+
+#define MAX_BRIGHTNESS 150
 //#define NUM_PIXELS 9
 #define NUM_PIXELS 51
 
@@ -24,19 +27,9 @@ enum Mode {
   MODE_LENGTH // last value is the length of this enum
 };
 
-const PROGMEM uint8_t solidColors[] = {
-  0xFF, 0x00, 0x00, // Red
-  0x00, 0xFF, 0x00, // Green
-  0x00, 0x00, 0xFF, // Blue
-  0xFF, 0xFF, 0x00, // Yellow
-  0xFF, 0x00, 0xFF, // Purple
-  0x00, 0xFF, 0xFF, // Cyan
-};
-
 // Config options
 uint8_t currentMode = GRADIENT_ANIMATED;
-uint8_t currentColorIndex = 0;
-uint32_t currentColor;
+uint16_t currentColorHue = 0;
 bool on = true;
 
 uint8_t i;
@@ -45,7 +38,7 @@ uint8_t spectrum[16];
 uint16_t cycle = 0;
 uint8_t cycleCounter = 0;
 
-int lastAnalog = 0;
+uint16_t lastAnalog = 0;
 uint8_t lastAmbient = 0;
 
 void setup() {
@@ -54,31 +47,28 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT);
 
+
   leds.setBrightness(10);
-  for (i = 0; i < NUM_PIXELS; i++) {
-    leds.setPixelColor(i, leds.Color(0, 255, 0));
-    delay(15);
-    leds.show();
-  }
-
-  leds.show();
-  delay(300);
+  if (DEBUG) {
+    for (i = 0; i < NUM_PIXELS; i++) {
+      leds.setPixelColor(i, leds.Color(0, 255, 0));
+      delay(15);
+      leds.show();
+    }
   
-  leds.fill(leds.Color(0, 0, 0));
-  leds.show();
-  delay(300);
-
-  uint8_t eepromValue = EEPROM.read(EEPROM_MODE_ADDRESS);
-  if (eepromValue < MODE_LENGTH) {
-    currentMode = eepromValue;
+    leds.show();
+    delay(300);
+    
+    leds.fill(leds.Color(0, 0, 0));
+    leds.show();
+    delay(300);
   }
 
-  eepromValue = EEPROM.read(EEPROM_COLOR_ADDRESS);
-  if (eepromValue < sizeof(solidColors)) {
-    currentColorIndex = eepromValue;
-  }
-
-  loadColor();
+  EEPROM.get(EEPROM_MODE_ADDRESS, currentMode);
+  currentMode = currentMode % MODE_LENGTH;
+  
+  EEPROM.get(EEPROM_COLOR_ADDRESS, currentColorHue);
+  
   _PROTECTED_WRITE(WDT.CTRLA,WDT_PERIOD_512CLK_gc); //enable the WDT, with a 0.512s timeout (WARNING: delay > 0.5 will reset)
 }
 
@@ -110,14 +100,15 @@ void checkButton() {
   if (abs(lastAnalog - buttonValue) > 20) { // Color
     if (buttonValue > 500) {
       on = true;
-      currentColorIndex = (currentColorIndex + 3) % sizeof(solidColors);
-      EEPROM.write(EEPROM_COLOR_ADDRESS, currentColorIndex);
-      loadColor();
+      currentColorHue += 6553;
+
+      EEPROM.put(EEPROM_COLOR_ADDRESS, currentColorHue);
     } else if (buttonValue > 250) { // Mode
       on = true;
       cycle = 0;
       currentMode = (currentMode + 1) % MODE_LENGTH;
-      EEPROM.write(EEPROM_MODE_ADDRESS, currentMode);
+      
+      EEPROM.put(EEPROM_MODE_ADDRESS, currentMode);
     } else if (buttonValue > 100) { // On / Off
       on = !on;
     }
@@ -129,13 +120,9 @@ void checkButton() {
 void checkBrightness() {
   uint8_t ambient = analogRead(BRIGHTNESS_PIN) >> 4;
   if (ambient != lastAmbient) {
-    leds.setBrightness(ambient);
+    leds.setBrightness(min(MAX_BRIGHTNESS, ambient));
     lastAmbient = ambient;
   }
-}
-
-void loadColor() {
-  currentColor = leds.Color(pgm_read_byte_near(solidColors + currentColorIndex), pgm_read_byte_near(solidColors + currentColorIndex + 1), pgm_read_byte_near(solidColors + currentColorIndex + 2));
 }
 
 void loop() {
@@ -147,7 +134,7 @@ void loop() {
 
   if (on) {
     if (currentMode == COLOR) {
-      leds.fill(currentColor);
+      leds.fill(leds.ColorHSV(currentColorHue, 255, 255));
     } else {
       if (currentMode == SPECTRUM) updateSpectrum();
       
