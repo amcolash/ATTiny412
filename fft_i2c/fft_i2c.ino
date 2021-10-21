@@ -7,15 +7,15 @@
 #define HALF_SAMPLES SAMPLES/2
 #define SCALAR 30
 
-#define BRIGHTNESS_PIN 0
-#define AUDIO_PIN 1
-#define LED_PIN 4
+#define AUDIO_PIN PIN_PA7
+#define LED_PIN PIN_PA3
 
-long start = 0;
+uint8_t fft_power = (uint8_t) (log(SAMPLES) / log(2));
+uint8_t i;
 
-int fft_power = (int) (log(SAMPLES) / log(2));
+int16_t avg8;
+uint16_t value, avg16, maxSample, minSample;
 
-int i, sum, avg, count, brightness;
 int8_t data[SAMPLES];
 byte buff[HALF_SAMPLES];
 
@@ -26,15 +26,23 @@ void requestEvent() {
   status = !status;
   digitalWrite(LED_PIN, status);
   
-  // send 17 bytes (16 fft bars and 1 light level)
+  // send 18 bytes (16 fft bars + avg)
 
   // Only send half of the data from FFT, average each two bands together
   for (i = 0; i < HALF_SAMPLES / 2; i++) {
     Wire.write(((buff[i*2] + buff[i*2 + 1]) / 2) & 0xFF);
   }
 
-  // Send light level
-  Wire.write(brightness & 0xFF);
+  avg16 /= SAMPLES;
+
+  Wire.write(avg16 >> 8);
+  Wire.write(avg16 & 255);
+
+  Wire.write(minSample >> 8);
+  Wire.write(minSample & 255);
+
+  Wire.write(maxSample >> 8);
+  Wire.write(maxSample & 255);
 }
 
 void setup() {
@@ -51,14 +59,12 @@ void setup() {
 void loop() {
   //  reset watchdog timer
   __asm__ __volatile__ ("wdr"::);
-  
-  // shift values to a place where they are useful for me (with 2.2k resistor)
-  brightness = analogRead(BRIGHTNESS_PIN) - 480;
-  
-  if (brightness < 0) brightness = 0;
-  if (brightness > 255) brightness = 255;
 
-  sum = 0;
+  avg8 = 0;
+  avg16 = 0;
+
+  minSample = 512;
+  maxSample = 512;
 
   // Try to fix issues with first band
   for (i = 0; i < 10; i++) {
@@ -66,13 +72,21 @@ void loop() {
   }
 
   for (i = 0; i < SAMPLES; i++) {
-    data[i] = ((analogRead(AUDIO_PIN) * SCALAR) >> 2) - 128;  // convert to 8-bit value
-    sum += data[i];
+    value = analogRead(AUDIO_PIN);
+//    data[i] = ((analogRead(AUDIO_PIN) * SCALAR) >> 2) - 128;  // convert to 8-bit value
+    data[i] = (value >> 2) - 128;  // convert to 8-bit value w/o SCALAR
+
+    avg8 += data[i];
+    avg16 += value;
+
+    minSample = min(minSample, value);
+    maxSample = max(maxSample, value);
   }
 
-  avg = sum / SAMPLES;
+  avg8 = avg8 / SAMPLES;
+//  avg16 /= SAMPLES;
   for (i = 0; i < SAMPLES; i++){
-    data[i] -= avg;
+    data[i] -= avg8;
   }
 
   fix_fftr(data, fft_power, 0);
@@ -89,9 +103,4 @@ void loop() {
 
   buff[2] = max(data[3], 1) & 0xFF;
   buff[3] = max(data[3], 1) & 0xFF;
-
-//  start = millis();
-//  while (millis() - start < 1) {
-//    i++;
-//  }
 }
