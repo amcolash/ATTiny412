@@ -8,7 +8,7 @@
 #define SCALAR 30
 
 #define AUDIO_PIN PIN_PA7
-#define LED_PIN PIN_PA3
+#define LED_PIN PIN_PA6
 
 uint8_t fft_power = (uint8_t) (log(SAMPLES) / log(2));
 uint8_t i;
@@ -25,12 +25,12 @@ void requestEvent() {
 
   status = !status;
   digitalWrite(LED_PIN, status);
-  
+
   // send 18 bytes (16 fft bars + avg)
 
   // Only send half of the data from FFT, average each two bands together
   for (i = 0; i < HALF_SAMPLES / 2; i++) {
-    Wire.write(((buff[i*2] + buff[i*2 + 1]) / 2) & 0xFF);
+    Wire.write(((buff[i * 2] + buff[i * 2 + 1]) / 2) & 0xFF);
   }
 
   avg16 /= SAMPLES;
@@ -46,14 +46,16 @@ void requestEvent() {
 }
 
 void setup() {
-  for (i = 0; i < HALF_SAMPLES; i++) { buff[i] = 0; }
+  for (i = 0; i < HALF_SAMPLES; i++) {
+    buff[i] = 0;
+  }
 
   Wire.begin(8);
   Wire.onRequest(requestEvent);
 
   pinMode(LED_PIN, OUTPUT);
 
-  _PROTECTED_WRITE(WDT.CTRLA,WDT_PERIOD_512CLK_gc); //enable the WDT, with a 0.512s timeout (WARNING: delay > 0.5 will reset)
+  _PROTECTED_WRITE(WDT.CTRLA, WDT_PERIOD_512CLK_gc); //enable the WDT, with a 0.512s timeout (WARNING: delay > 0.5 will reset)
 }
 
 void loop() {
@@ -73,7 +75,7 @@ void loop() {
 
   for (i = 0; i < SAMPLES; i++) {
     value = analogRead(AUDIO_PIN);
-//    data[i] = ((analogRead(AUDIO_PIN) * SCALAR) >> 2) - 128;  // convert to 8-bit value
+    //    data[i] = ((analogRead(AUDIO_PIN) * SCALAR) >> 2) - 128;  // convert to 8-bit value
     data[i] = (value >> 2) - 128;  // convert to 8-bit value w/o SCALAR
 
     avg8 += data[i];
@@ -84,15 +86,15 @@ void loop() {
   }
 
   avg8 = avg8 / SAMPLES;
-//  avg16 /= SAMPLES;
-  for (i = 0; i < SAMPLES; i++){
+  //  avg16 /= SAMPLES;
+  for (i = 0; i < SAMPLES; i++) {
     data[i] -= avg8;
   }
 
   fix_fftr(data, fft_power, 0);
 
   // fill i2c buffer with fft data
-  for(i = 0; i < HALF_SAMPLES; i++) {
+  for (i = 0; i < HALF_SAMPLES; i++) {
     buff[i] = max(data[i], 1) & 0xFF;
   }
 
