@@ -22,7 +22,6 @@ byte buff[HALF_SAMPLES];
 bool status = false;
 
 void requestEvent() {
-
   status = !status;
   digitalWrite(LED_PIN, status);
 
